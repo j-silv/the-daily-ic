@@ -69,7 +69,7 @@ gsettings set org.gnome.desktop.background picture-options "scaled"
 gsettings set org.gnome.desktop.background picture-uri "file:///$BG_PATH/$image_file"
 
 # tell user about the awesome new IC background
-ic_name=${image_file%$IMAGE_TYPE}
+ic_name=${image_file%%.*} # remove file type
 zenity --question --title "Hello $(whoami) !" \
 --text "Your IC of the day is: <b>$ic_name</b>\n\n<sub><i>Image source:\n$image_url</i></sub>" \
 --window-icon='info' \
