@@ -36,6 +36,7 @@ Feel free to play around with how the script works. For example, you can change 
 - https://www.cpu-world.com/info/die_pictures.html
 - http://www.siliconzoo.org/index.html
 - http://www.righto.com/search?q=die+photo
+- https://www.reddit.com/r/ReSilicon/
 
 # Acknowledgements
 - zeptobars.com
