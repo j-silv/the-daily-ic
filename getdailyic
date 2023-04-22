@@ -17,15 +17,16 @@
 ZEPTO_URL="https://zeptobars.com/en/"
 PREFIX_IMAGE_URL="https://s.zeptobars.com/"
 IMAGE_TYPE=".jpg"
+RANDOM=$(date +%s) # use epoch to seed the pseudo-random number generator in Linux
 BG_PATH="$HOME/bg" # background directory on machine (needs to have write access)
 
 if [[ ! -d $BG_PATH ]]; then
     mkdir "$BG_PATH"
+else
+    # clean-up from last download 
+    # feel free to comment this out if you want to keep the downloaded images
+    rm -f $BG_PATH/*
 fi
-
-# clean-up from last download 
-# feel free to comment this out if you want to keep the downloaded images
-rm -f $BG_PATH/*$IMAGE_TYPE*
 
 # get total number of pages (from home page)
 max_num_pages=\
@@ -44,18 +45,22 @@ $(
 # random page select from total number of pages (1 inclusive)
 page_idx=$((1 + $RANDOM % $max_num_pages))
 
-# get one of the images from page_idx
-image_url=\
+# get a list of images from the page_idx
+list_image_urls=\
 $(
     # raw HTML
     wget --quiet "$ZEPTO_URL?p=$page_idx" --output-document=- | \
-    # extract img links
-    grep --only-matching --extended-regexp 'src="https://([^"#?]+)"' | \
+    # extract img links (for ex: "<a href="https://s.zeptobars.com/ad603-HD.jpg")
+    grep --only-matching --extended-regex "<a href=\"${PREFIX_IMAGE_URL}(\w|-|\.)+" | \
     # remove HTML
-    cut --delimiter='"' --fields=2 | \
-    # randomize extracted img link
-    shuf --head-count=1
+    cut --delimiter='"' --fields=2
 )
+
+num_image_urls=$(echo "$list_image_urls" | wc -l)
+
+# random image select from total number of images (1 inclusive)
+image_idx=$((1 + $RANDOM % $num_image_urls))
+image_url=$(echo "$list_image_urls" | head -n $image_idx | tail --lines=+$image_idx)
 
 # download img
 wget --quiet --directory-prefix="$BG_PATH/" $image_url
