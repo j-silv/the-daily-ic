@@ -13,77 +13,131 @@
 # Thanks to https://zeptobars.com/en/ for the amazing images
 #############################################################
 
-# constants
 ZEPTO_URL="https://zeptobars.com/en/"
 PREFIX_IMAGE_URL="https://s.zeptobars.com/"
-IMAGE_TYPE=".jpg"
+IMAGE_FOLDER="$HOME/getdailyic-img" # IC images are saved here (user needs write access)
+CLEAN_IMAGE_FOLDER=1 # 0: keep contents of image folder, 1: delete contents of image folder
 RANDOM=$(date +%s) # use epoch to seed the pseudo-random number generator in Linux
-BG_PATH="$HOME/bg" # background directory on machine (needs to have write access)
 
-if [[ ! -d $BG_PATH ]]; then
-    mkdir "$BG_PATH"
+while : ; do # loop allows user to fetch a new IC (see end of file)
+
+############################################################
+# Clean up from last download if CLEAN_IMAGE_FOLDER=1.
+# This can't be done at the end of the script, since the 
+# downloaded background image needs to be on disk so that 
+# it can be displayed.
+############################################################
+
+if [[ ! -d $IMAGE_FOLDER ]]; then
+    mkdir "$IMAGE_FOLDER"
 else
-    # clean-up from last download 
-    # feel free to comment this out if you want to keep the downloaded images
-    rm -f $BG_PATH/*
+    if [[ $CLEAN_IMAGE_FOLDER -eq 1 ]]; then
+        rm -f $IMAGE_FOLDER/*
+    fi
 fi
 
-# get total number of pages (from home page)
+############################################################
+# Extract total number of pages.
+# This number changes as more and more posts are created
+# on zeptobars.com.
+############################################################
+
 max_num_pages=\
 $(
-    # raw HTML
     wget --quiet $ZEPTO_URL --output-document=- | \
-    # extract displayed page numbers (probably a better way to do this...)
     grep --only-matching --extended-regexp 'href="\?p=[0-9]+"' | \
-    # separate number
     cut --delimiter='=' --fields=3 | \
     cut --delimiter='"' --fields=1 | \
     sort --numeric-sort | \
     tail -1 
 ) 
-
-# random page select from total number of pages (1 inclusive)
 page_idx=$((1 + $RANDOM % $max_num_pages))
 
-# get a list of images from the page_idx
-list_image_urls=\
+############################################################
+# Extract a single post from a page (URL and description).
+# Example extraction:
+# 1) <h1><a href="/en/read/my-cool-ic">My cool IC - it's really cool</a></h1>
+# 2) read/my-cool-ic">My cool IC - it's really cool</a></h1>
+# 3) read/my-cool-ic">My cool IC - it's really cool
+# 4) read/my-cool-ic>My cool IC - it's really cool
+# 5) My cool IC - it's really cool
+# 6) https://zeptobars.com/en/read/my-cool-ic
+############################################################
+
+temp_list_posts=\
 $(
-    # raw HTML
     wget --quiet "$ZEPTO_URL?p=$page_idx" --output-document=- | \
-    # extract img links (for ex: "<a href="https://s.zeptobars.com/ad603-HD.jpg")
-    grep --only-matching --extended-regex "<a href=\"${PREFIX_IMAGE_URL}(\w|-|\.)+" | \
-    # remove HTML
-    cut --delimiter='"' --fields=2
+    grep --only-matching --extended-regex "<h1>.+</h1>" \
 )
+num_posts=$(echo "$temp_list_posts" | wc -l) 
+post_idx=$((1 + $RANDOM % $num_posts))
 
-num_image_urls=$(echo "$list_image_urls" | wc -l)
+temp_post=$(echo "$temp_list_posts" | head -n $post_idx | tail --lines=+$post_idx)
+temp_post=${temp_post#"<h1><a href=\"/en/"}
+temp_post=${temp_post%"</a></h1>"}
+temp_post=${temp_post/\"/}
+post_description=$(echo "$temp_post" | cut -d '>' -f2 )
+post_url=${ZEPTO_URL}$(echo "$temp_post" | cut -d '>' -f1)
 
-# random image select from total number of images (1 inclusive)
-image_idx=$((1 + $RANDOM % $num_image_urls))
-image_url=$(echo "$list_image_urls" | head -n $image_idx | tail --lines=+$image_idx)
+############################################################
+# Extract the high definition image from the post.
+# Example extraction:
+# 1) <a href="https://s.zeptobars.com/my-cool-ic.jpg
+# 2) https://s.zeptobars.com/my-cool-ic.jpg
+# NOTE: sometimes there are multiple images in a single
+# post. That is why the 'head' command is used.
+############################################################
 
-# download img
-wget --quiet --directory-prefix="$BG_PATH/" $image_url
+image_url=\
+$(
+    wget --quiet "$post_url" --output-document=- | \
+    grep --only-matching --extended-regex "<a href=\"${PREFIX_IMAGE_URL}(\w|-|\.)+" | \
+    head -n 1 | \
+    cut --delimiter='"' --fields=2 \
+) 
 
-# set as background image
+############################################################
+# Download image and set the background.
+############################################################
+
+wget --quiet --directory-prefix="$IMAGE_FOLDER/" $image_url # download img
 image_file=${image_url#$PREFIX_IMAGE_URL}
-
-# some images look better with "scaled", some  with "wallpaper"
-# perhaps add some conditional setting depending on image resolution 
-gsettings set org.gnome.desktop.background picture-options "scaled"
-gsettings set org.gnome.desktop.background picture-uri "file:///$BG_PATH/$image_file"
-
-# tell user about the awesome new IC background
 ic_name=${image_file%%.*} # remove file type
-zenity --question --title "Hello $(whoami) !" \
---text "Your IC of the day is: <b>$ic_name</b>\n\n<sub><i>Image source:\n$image_url</i></sub>" \
---window-icon='info' \
---ok-label "Google this IC" --cancel-label="Close" \
---width=420 --height=100
+ic_name=${ic_name%-HD} # remove postfix for high def photos
+ic_name=${ic_name^^} # IC names are usually (always?) uppercase
+gsettings set org.gnome.desktop.background picture-options "scaled"
+gsettings set org.gnome.desktop.background picture-uri "file:///$IMAGE_FOLDER/$image_file"
 
-# check return code
-if [[ $? -eq 0 ]]; then
-    # open up default browser and search for ic_name
-    xdg-open "https://www.google.com/search?q=$ic_name" &>/dev/null &
-fi
+############################################################
+# Info popup to tell user about the new IC (top left corner)
+# NOTE: message piped to xmessage to allow newline chars
+############################################################
+
+echo -e "\
+[IC NAME]:\n${ic_name}\n\n\
+[DESCRIPTION]:\n${post_description}\n\n\
+[SOURCE]:\n${post_url}\n\n\
+NOTE: clicking any button below will close this box!" | \
+xmessage -geometry +0+0 \
+-buttons "Close":1,"Go to image source":2,"Google IC":3,"Get new IC":4 -default "Close" \
+-title "The Daily IC" -file -
+
+case $? in
+    2)
+        xdg-open "$post_url" &>/dev/null &
+        break
+        ;;
+    3)
+        xdg-open "https://www.google.com/search?q=$ic_name" &>/dev/null &
+        break
+        ;;
+    4)
+        # repeat loop, so don't break here
+        ;;
+    *) # closing xmessage in top right of the window returns exit code 1
+        break
+        ;;
+esac
+
+done # end of while loop
 
